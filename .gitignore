@@ -11,3 +11,6 @@ config/filebrowser.db-shm
 # Python
 __pycache__/
 *.py[cod]
+
+# Docker
+Dockerfile

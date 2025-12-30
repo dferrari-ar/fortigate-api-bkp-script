@@ -1,0 +1,13 @@
+# Security
+.env
+
+# Runtime data
+backups/*
+backups/*/*
+config/filebrowser.db
+config/filebrowser.db-wal
+config/filebrowser.db-shm
+
+# Python
+__pycache__/
+*.py[cod]

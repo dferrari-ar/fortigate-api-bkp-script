@@ -1,0 +1,138 @@
+name: Fortigate API Git Backups Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - 'backups/**'
+  workflow_dispatch:
+
+concurrency:
+  group: fortigate-backups
+  cancel-in-progress: false
+
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Debug Environment
+        run: |
+          echo "User: $(whoami)"
+          echo "Groups: $(groups)"
+          echo "Directory: $(pwd)"
+          ls -la
+          docker compose version
+
+      - name: Configure .env from Secrets
+        run: |
+          # Copy the template from the repo
+          cp .env.example .env
+          
+          # Inject Secrets using sed (Replace placeholders)
+          # sed -i "s|PLACEHOLDER_USER|${{ secrets.FGT_USER }}|g" .env
+          # sed -i "s|PLACEHOLDER_PASSWORD|${{ secrets.FGT_PASSWORD }}|g" .env
+          # Inject Token if it exists (Empty by default in .env.example, so we just append or replace if we had a placeholder to be safe, 
+          # but here we just append purely for safety or use sed if we added a placeholder. 
+          # Simpler strategy: Echo it to end if not strictly replacing)
+          
+          if [ ! -z "${{ secrets.FORTIGATE_API_TOKEN }}" ]; then
+            echo "" >> .env
+            echo "FORTIGATE_API_TOKEN=${{ secrets.FORTIGATE_API_TOKEN }}" >> .env
+          fi
+
+          # Encryption Settings
+          # We append these if they exist in secrets or stick to defaults if not set, 
+          # but usually good to start fresh or use sed if placeholders existed.
+          # Since .env.example now has placeholders/defaults, let's use append for keys not in example or simple echo.
+          
+          # Force set ENCRYPT_BACKUP if configured in secrets, else rely on .env default (no)
+          if [ ! -z "${{ secrets.ENCRYPT_BACKUP }}" ]; then
+             echo "ENCRYPT_BACKUP=${{ secrets.ENCRYPT_BACKUP }}" >> .env
+          fi
+          
+          if [ ! -z "${{ secrets.BACKUP_ENCRYPTION_KEY }}" ]; then
+             echo "BACKUP_ENCRYPTION_KEY=${{ secrets.BACKUP_ENCRYPTION_KEY }}" >> .env
+          fi
+          
+          if [ ! -z "${{ secrets.DEBUG }}" ]; then
+             echo "DEBUG=${{ secrets.DEBUG }}" >> .env
+          fi
+          
+          if [ ! -z "${{ secrets.DOCKER_SUBNET }}" ]; then
+             echo "DOCKER_SUBNET=${{ secrets.DOCKER_SUBNET }}" >> .env
+          fi
+          
+          # Git Auto-Push
+          if [ ! -z "${{ secrets.GIT_REPO_URL }}" ]; then
+             echo "GIT_REPO_URL=${{ secrets.GIT_REPO_URL }}" >> .env
+          fi
+          
+          # Git Token (PAT). Secret must be named GIT_PUSH_TOKEN
+          if [ ! -z "${{ secrets.GIT_PUSH_TOKEN }}" ]; then 
+             echo "GIT_PUSH_TOKEN=${{ secrets.GIT_PUSH_TOKEN }}" >> .env
+          fi
+          
+          # Web UI Profile (Enable/Disable)
+          if [ ! -z "${{ secrets.COMPOSE_PROFILES }}" ]; then
+             echo "COMPOSE_PROFILES=${{ secrets.COMPOSE_PROFILES }}" >> .env
+          fi
+
+          # NOTE: Per-Device Token Mappings
+          # We map the specific secret name to the environment variable name expected by the script.
+          # Format A (Name-based): Device Name "Forti-Lab" -> Env Var "Forti-Lab_Token"
+          # Format B (IP-based):   IP "192.168.1.1" -> Env Var "FGT_TOKEN_192_168_1_1"
+          
+          # Mapping for Forti-Lab (Name: Forti-Lab)
+          if [ ! -z "${{ secrets.FORTIGATE_API_TOKEN_FORTI_LAB }}" ]; then
+            echo "FORTIGATE_API_TOKEN_FORTI_LAB=${{ secrets.FORTIGATE_API_TOKEN_FORTI_LAB }}" >> .env
+          fi
+          
+          # Mapping for QUAR_FTG_80F
+          if [ ! -z "${{ secrets.FORTIGATE_API_TOKEN_QUAR_FTG_80F }}" ]; then
+            echo "FORTIGATE_API_TOKEN_QUAR_FTG_80F=${{ secrets.FORTIGATE_API_TOKEN_QUAR_FTG_80F }}" >> .env
+          fi
+
+          # Mapping for FortigateDRP
+          if [ ! -z "${{ secrets.FORTIGATE_API_TOKEN_FORTIGATEDRP }}" ]; then
+            echo "FORTIGATE_API_TOKEN_FORTIGATEDRP=${{ secrets.FORTIGATE_API_TOKEN_FORTIGATEDRP }}" >> .env
+          fi
+          
+          # Mapping for 172.20.202.1
+          if [ ! -z "${{ secrets.FGT_TOKEN_172_20_202_1 }}" ]; then
+            echo "FORTIGATE_API_TOKEN_172_20_202_1=${{ secrets.FGT_TOKEN_172_20_202_1 }}" >> .env
+          fi
+          
+          # Example for other devices:
+          # echo "FGT_TOKEN_192_168_1_1=${{ secrets.FGT_TOKEN_192_168_1_1 }}" >> .env
+          
+          # Optional: Overwrite defaults if they exist in secrets (Advanced)
+          # If you want to change defaults via secrets without editing the file:
+          # sed -i "s|RUN_MODE=manual|RUN_MODE=${{ secrets.RUN_MODE }}|g" .env || true
+
+      - name: Deploy to Production Folder
+        run: |
+          # Define Target Directory
+          DEPLOY_DIR="$HOME/forti-backup"
+          mkdir -p "$DEPLOY_DIR"
+          
+          # Sync files (Copy App, Config, Dockerfile, Compose)
+          # We use rsync to cleanly mirror, or cp for simplicity if rsync isn't guaranteed
+          # Excluding .git and runner artifacts
+          echo "Deploying to $DEPLOY_DIR..."
+          rsync -rlptD --progress . "$DEPLOY_DIR" --exclude .git --exclude .github --exclude 'backups' --exclude 'forti-api-bkp-script'
+          
+          # Ensure the generated .env is there (it was created in current dir)
+          cp .env "$DEPLOY_DIR/.env"
+          
+          # Navigate to Deploy Dir
+          cd "$DEPLOY_DIR"
+          
+          # Deploy
+          docker compose -f fortigate-api-git-backups.yml up -d --build --remove-orphans
+          
+          echo "Deployment Success. App is running in $DEPLOY_DIR"
+          echo "Logs are located at: $DEPLOY_DIR/backups/backup.log"

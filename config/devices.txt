@@ -1,0 +1,10 @@
+# Listado de Fortigates en formato: IP:PORT, Nombre del Dispositivo. 
+# Los nombres de los dispositivos deben cumplir con las siguientes reglas:
+# names can only contain alphanumeric characters ([a-z], [A-Z], [0-9]) or underscores (_). Spaces are not allowed. Must start with a letter ([a-z], [A-Z]) or underscores (_).
+# Ejemplo: 
+# 192.168.1.1:443, Firewall_Principal
+# 10.0.0.1, Firewall_Branch (Usa puerto default)
+# Los nombres serán parte del secret que debe cargarse en GIT. [ver README]
+172.240.202.1:3443, Forti_FTG_80F
+172.44.0.1:3443, FortiDRP
+

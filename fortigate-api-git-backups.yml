@@ -1,0 +1,35 @@
+services:
+  backup-worker:
+    build: .
+    container_name: Fortigate_backups_worker
+    volumes:
+      - ${HOST_BACKUP_DIR:-./backups}:/backups
+      - ./config:/app/config
+    env_file:
+      - .env
+    restart: on-failure
+    networks:
+      - backup_net
+
+  web-access:
+    image: filebrowser/filebrowser
+    container_name: forti_backup_web
+    profiles: [ "web" ]
+    volumes:
+      - ${HOST_BACKUP_DIR:-./backups}:/srv
+      - filebrowser_data:/database.db
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    networks:
+      - backup_net
+
+networks:
+  backup_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET}
+
+volumes:
+  filebrowser_data:
